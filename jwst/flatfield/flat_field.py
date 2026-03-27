@@ -1406,22 +1406,24 @@ def combine_fast_slow(wl, flat_2d, flat_dq, flat_err, tab_wl, tab_flat, tab_flat
     wgt = np.array([5.0, 8.0, 5.0]) / 18.0
 
     # Interpolate tabular data over the range of wavelengths,
-    # weight, and sum at each of 3 specified points
+    # weight, and sum at each of 3 specified points.
+    # We allow extrapolation to the right (red end) using the last available value,
+    # as per the Parlanti Fig A1 extension strategy for wavext.
     for offset, weight in zip(dx, wgt, strict=True):
         wavelengths = wl_c + dwl * offset
-        values += weight * np.interp(wavelengths, tab_wl, tab_flat, left=np.nan, right=np.nan)
+        # np.interp defaults to fp[0] for left and fp[-1] for right if they are not provided.
+        # We explicitly set right=tab_flat[-1] to follow the Parlanti strategy.
+        values += weight * np.interp(wavelengths, tab_wl, tab_flat, left=np.nan, right=tab_flat[-1])
 
-    # Interpolate error values from reference file using a simple
-    # linear interpolation as these don't have the required precision
-    # to justify a more complex interpolation
-    error_value = np.interp(wl_c, tab_wl, tab_flat_error, left=np.nan, right=np.nan)
+    # Interpolate error values from reference file.
+    error_value = np.interp(wl_c, tab_wl, tab_flat_error, left=np.nan, right=tab_flat_error[-1])
 
     # Handle bad wavelength values in un-cleaned wavelength array
     bad = wl <= 0
     values[bad] = 1.0
     error_value[bad] = 0.0
 
-    # Handle missing values
+    # Handle missing values (only on the left/blue end now, since right is extended)
     missing = np.isnan(values)
     values[missing] = 1.0
     error_value[missing] = 0.0
@@ -1613,16 +1615,24 @@ def interpolate_flat(image_flat, image_dq, image_err, image_wl, wl):
         # correction is made
         flat_2d[np.where(flat_bad)] = 1.0
 
-    # If the wavelength at a pixel is outside the range of wavelengths
-    # for the reference image, flag the pixel as bad.  Note that this will
-    # also result in the computed flat field being set to 1.
-    mask = wl < image_wl[0]
-    flat_dq[mask] = np.bitwise_or(flat_dq[mask], dqflags.pixel["DO_NOT_USE"])
-    mask = wl > image_wl[-1]
-    flat_dq[mask] = np.bitwise_or(flat_dq[mask], dqflags.pixel["DO_NOT_USE"])
+    # If the wavelength at a pixel is shorter than the lowest wavelength in the
+    # reference image (the blue/low end), flag the pixel as bad.
+    mask_blue = wl < image_wl[0]
+    flat_dq[mask_blue] = np.bitwise_or(flat_dq[mask_blue], dqflags.pixel["DO_NOT_USE"])
+    flat_2d[mask_blue] = 1.0
 
-    # If a pixel is flagged as bad, applying flat_2d should not make any
-    # change to the science data.
+    # If the wavelength at a pixel is larger than the highest wavelength in the
+    # reference image (the red/high end), we allow it for wavext.
+    # As per Parlanti Fig A1, the slow variation (the image component) is set to 1.0.
+    # We do NOT flag these as DO_NOT_USE.
+    mask_red = wl > image_wl[-1]
+    # Ensure DQ is clean for these pixels if they were only flagged due to range
+    # Actually, we don't have a way to know if they were flagged for other reasons,
+    # but since this is a new flat_dq for the 2D slice, we just don't add the flag.
+    flat_2d[mask_red] = 1.0
+
+    # If a pixel is still flagged as bad (e.g. from the blue end or original DQ),
+    # applying flat_2d should not make any change to the science data.
     flat_bad = np.bitwise_and(flat_dq, dqflags.pixel["DO_NOT_USE"])
     flat_2d[np.where(flat_bad)] = 1.0
 
