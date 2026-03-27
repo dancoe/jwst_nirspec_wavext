@@ -281,15 +281,9 @@ def ifu(input_model, reference_files, slit_y_range=(-0.55, 0.55)):
         log.critical(log_message)
         raise RuntimeError(log_message)
     # Check for data actually being present on NRS2
-    log_message = f"No IFU slices fall on detector {detector}"
-    if detector == "NRS2" and grating.endswith("M"):
-        # Mid-resolution gratings do not project on NRS2.
-        log.critical(log_message)
-        raise NoDataOnDetectorError(log_message)
-    if detector == "NRS2" and grating == "G140H" and filt == "F070LP":
-        # This combination of grating and filter does not project on NRS2.
-        log.critical(log_message)
-        raise NoDataOnDetectorError(log_message)
+    # Mid-resolution gratings and G140H/F070LP do not nominally project on NRS2.
+    # However, for wavelength extension work, we allow these to proceed.
+    # The pipeline will later check if any pixels actually have valid wavelengths.
 
     slits = np.arange(30)
     # Get the corrected disperser model
@@ -1245,16 +1239,22 @@ def get_spectral_order_wrange(input_model, wavelengthrange_file):
             order = -1
             wrange = full_range
         else:
-            order = wave_range_model.order[index]
-            wrange = wave_range_model.wavelengthrange[index]
+            # Eagerly materialise values before closing the ASDF file to avoid
+            # 'OSError: Attempt to load block from closed file' from lazy-loaded
+            # ASDF ndarray proxies being accessed after close().
+            order = int(wave_range_model.order[index])
+            wrange = list(wave_range_model.wavelengthrange[index])
         log.info(
             f"Combination {keyword} missing in wavelengthrange file, setting "
             f"order to {order} and range to {wrange}."
         )
     else:
         # Combination of filter_grating is found in wavelengthrange file.
-        order = wave_range_model.order[index]
-        wrange = wave_range_model.wavelengthrange[index]
+        # Eagerly materialise values before closing the ASDF file to avoid
+        # 'OSError: Attempt to load block from closed file' from lazy-loaded
+        # ASDF ndarray proxies being accessed after close().
+        order = int(wave_range_model.order[index])
+        wrange = list(wave_range_model.wavelengthrange[index])
 
     wave_range_model.close()
     return order, wrange
