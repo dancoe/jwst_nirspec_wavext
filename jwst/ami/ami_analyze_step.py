@@ -245,10 +245,8 @@ class AmiAnalyzeStep(Step):
             nrm_reffile = self.get_reference_file(input_model, "nrm")
             log.info(f"Using NRM reference file {nrm_reffile}")
 
-            with (
-                datamodels.ThroughputModel(throughput_reffile) as throughput_model,
-                datamodels.NRMModel(nrm_reffile) as nrm_model,
-            ):
+            with datamodels.ThroughputModel(throughput_reffile) as throughput_model, \
+                 datamodels.NRMModel(nrm_reffile) as nrm_model:
                 # Apply the LG+ methods to the data
                 oifitsmodel, oifitsmodel_multi, amilgmodel = ami_analyze.apply_lg_plus(
                     input_model,
